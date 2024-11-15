@@ -1,21 +1,30 @@
 from typing import Any
+
+# Django imports
 from django.shortcuts import render
-from django.views.generic import ListView, DetailView, CreateView, TemplateView
-
+from django.views.generic import ListView, DetailView, CreateView, TemplateView, DeleteView, UpdateView
 from django.http import HttpResponse
-from .models import Author, Book, Librarian, Library
-
+from django.urls import reverse_lazy
 from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required, user_passes_test, permission_required
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.mixins import UserPassesTestMixin, PermissionRequiredMixin
 
-# Create your views here.
+# App-specific imports
+from .models import Author, Book, Librarian, Library, UserProfile
+from .forms import BookForm
 
+
+# Views for listing and displaying models
 def booklist(request):
+    """View to display list of all books."""
     books = Book.objects.all()
-    context = {'books':books}
-
-    return render(request, 'relationship_app/list_books.html',context=context)
+    context = {'books': books}
+    return render(request, 'relationship_app/list_books.html', context=context)
 
 class LibraryListView(DetailView):
+    """View to display details of a specific library and its books."""
     model = Library
     template_name = 'relationship_app/librarylist.html'
 
@@ -26,50 +35,106 @@ class LibraryListView(DetailView):
         return context
 
 
-from django.contrib.auth.decorators import login_required, user_passes_test, permission_required
-from .models import UserProfile
-
+# Helper functions for access control
 def has_role(user, role):
+    """Checks if the user has the specified role."""
     return UserProfile.objects.filter(user=user.id, role=role).exists()
+
 def is_admin(user):
+    """Checks if the user is an Admin."""
     return has_role(user, "Admin")
+
 def is_librarian(user):
-    return has_role(user, "ibrarian")
+    """Checks if the user is a Librarian."""
+    return has_role(user, "Librarian")
 
 
+# Views restricted by user roles
 @user_passes_test(is_admin)
 def AdminOnlyView(request):
-    return HttpResponse("<h1>Welcome Admin!</h1>")
+    """View accessible only to Admins."""
+    user = request.user
+    return render(request, 'relationship_app/admin_view.html', {"user": user})
 
 @user_passes_test(is_librarian)
 def LibrarianView(request):
-    return HttpResponse("<h1>Welcome Librarian!</h1>")
+    """View accessible only to Librarians."""
+    user = request.user
+    return render(request, 'relationship_app/librarian_view.html', {"user": user})
 
-from django.contrib.auth.forms import UserCreationForm
-from django.urls import reverse_lazy
 
-class register(CreateView): 
-    form_class = UserCreationForm()
+# User registration and profile views
+class RegisterView(CreateView):
+    """View for user registration."""
     form_class = UserCreationForm
     success_url = reverse_lazy('login')
     template_name = 'relationship_app/register.html'
 
 class ProfileView(TemplateView):
+    """User profile view."""
     template_name = 'relationship_app/profile.html'
-    # user = self.get_object
+
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
-        # user = self.get_object()
         context["user"] = self.request.user
         return context
-    
-from django.contrib.auth.views import LoginView, LogoutView
 
-class login(LoginView):
+
+# Authentication views
+class LoginView(LoginView):
+    """User login view."""
     template_name = 'relationship_app/login.html'
 
-class logout(LogoutView):
+class LogoutView(LogoutView):
+    """User logout view."""
     template_name = 'relationship_app/logout.html'
 
 
-# class MemberView(TemplateView):
+# Member view restricted by role
+class MemberView(UserPassesTestMixin, TemplateView):
+    """View accessible only to Members."""
+    template_name = 'relationship_app/member_view.html'
+
+    def test_func(self) -> bool:
+        return hasattr(self.request.user, "Member")
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context["user"] = self.request.user
+        return context
+
+#views to pages that can add, edit, delete and browse books
+
+class AddBookView(PermissionRequiredMixin, CreateView):
+    model = Book
+    form_class = BookForm
+    template_name = 'relationship_app/addbook.html'
+    permission_required = ["relationship_app.add_book"]
+    success_url = reverse_lazy('booklist')
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context["authors"] = Author.objects.all()
+        return context
+
+# 2. EditBookView
+class EditBookView(PermissionRequiredMixin, UpdateView):
+    model = Book
+    form_class = BookForm
+    template_name = 'relationship_app/editbookview.html'
+    permission_required = ["relationship_app.change_book"]
+    success_url = reverse_lazy('booklist')  # Redirect to book list or relevant page after editing
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['authors'] = Author.objects.all()  # Add authors for the dropdown
+        return context
+
+
+# 3. DeleteBookView
+class DeleteBookView(PermissionRequiredMixin, DeleteView):
+    model = Book
+    template_name = 'relationship_app/deletebookview.html'
+    permission_required = ["relationship_app.delete_book"]
+    success_url = reverse_lazy('booklist')  # Redirect to book list or relevant page after deleting
+    

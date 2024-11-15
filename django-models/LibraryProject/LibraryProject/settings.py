@@ -123,3 +123,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+#allows mysites to be embedded in iframes of same origin
+#this is for the simple browser in vscode
+X_FRAME_OPTIONS = 'SAMEORIGIN'
